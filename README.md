@@ -287,6 +287,8 @@ Optional. With Slack connected, the runner messages you when a job needs you or 
 
 [docs/operations.md](docs/operations.md#slack-notifications) has the details.
 
+To get the same notifications in Telegram, add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to `.env.local`; see [Telegram notifications](docs/operations.md#telegram-notifications).
+
 ## Updating
 
 After a merge to `main`, update the live checkout with:

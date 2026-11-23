@@ -397,6 +397,31 @@ export const slackMessages = pgTable(
   ],
 );
 
+/** One Telegram message per notification event, like slack_messages: sent once, then edited; see runner/telegram.ts. */
+export const telegramMessages = pgTable(
+  "telegram_messages",
+  {
+    id: text("id").primaryKey(),
+    job_id: text("job_id").$type<JobId>().notNull(),
+    kind: text("kind").$type<NotifyKind>().notNull(),
+    state: text("state").$type<SlackMessageState>().notNull(),
+    chat_id: text("chat_id"),
+    message_id: integer("message_id"),
+    /** A hash of the message last sent, so an unchanged event is not edited again. */
+    fingerprint: text("fingerprint"),
+    /** What the resolved message says happened; null while open. */
+    resolution: text("resolution"),
+    created_at: ts("created_at").notNull(),
+    updated_at: ts("updated_at").notNull(),
+    resolved_at: ts("resolved_at"),
+  },
+  (t) => [
+    index("telegram_messages_state_idx").on(t.state),
+    index("telegram_messages_job_idx").on(t.job_id),
+    check("telegram_messages_state_check", sql`${t.state} in ('posting', 'open', 'resolved')`),
+  ],
+);
+
 export const onboardingState = pgEnum("onboarding_state", ONBOARDING_STATES);
 
 /**
@@ -478,3 +503,4 @@ export type AuditRow = typeof auditLog.$inferSelect;
 export type JobEvidenceRow = typeof jobEvidence.$inferSelect;
 export type NotificationSettingsRow = typeof notificationSettings.$inferSelect;
 export type SlackMessageRow = typeof slackMessages.$inferSelect;
+export type TelegramMessageRow = typeof telegramMessages.$inferSelect;

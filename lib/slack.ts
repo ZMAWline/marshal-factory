@@ -51,7 +51,7 @@ export const URGENT: Record<NotifyKind, boolean> = {
   reverted: false,
 };
 
-const EMOJI: Record<NotifyKind, string> = {
+export const EMOJI: Record<NotifyKind, string> = {
   question: "❓",
   handover: "👀",
   failed: "❌",
@@ -61,7 +61,7 @@ const EMOJI: Record<NotifyKind, string> = {
   reverted: "↩️",
 };
 
-const LABELS: Record<NotifyKind, string> = { ...INBOX_LABELS, merged: "Merged by the factory", reverted: "Reverted by the factory" };
+export const LABELS: Record<NotifyKind, string> = { ...INBOX_LABELS, merged: "Merged by the factory", reverted: "Reverted by the factory" };
 
 /** An event older than this when the notifier first sees it is not posted: it is in the panel, and Slack is for what is new. */
 export const NOTIFY_WINDOW_MS = 24 * 3_600_000;
@@ -218,7 +218,7 @@ export function resolution(kind: NotifyKind, job: NotifyJob | undefined): string
   }
 }
 
-// What could pass for a credential in an agent's summary or question; it never reaches Slack.
+// What could pass for a credential in an agent's summary or question; it never reaches Slack or Telegram.
 const SECRET_PATTERNS = [
   /xox[abposr]-[A-Za-z0-9-]{10,}/g,
   /xapp-[A-Za-z0-9-]{10,}/g,
@@ -226,6 +226,7 @@ const SECRET_PATTERNS = [
   /github_pat_[A-Za-z0-9_]{20,}/g,
   /sk-[A-Za-z0-9_-]{20,}/g,
   /lin_(?:api|oauth)_[A-Za-z0-9]{20,}/g,
+  /\b\d{6,12}:[A-Za-z0-9_-]{30,}/g,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
 ];
 
@@ -237,7 +238,7 @@ export function redact(text: string, secrets: readonly string[] = []) {
   return out;
 }
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+export const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 /** Slack mrkdwn treats these three as control characters. */
 const escape = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 

@@ -288,6 +288,13 @@
       "when": 1795457768963,
       "tag": "0040_source_request",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795462581492,
+      "tag": "0041_telegram_notifications",
+      "breakpoints": true
     }
   ]
 }
