@@ -17,7 +17,20 @@ const linear = {
   }),
 };
 
-const SHIPPED = { linear } satisfies Record<string, SourceShape>;
+const plane = {
+  label: "Plane",
+  writeback: z.object({ kind: z.literal("plane"), issueId: z.string().min(1) }),
+  sourceState: z.object({
+    state: z.string().nullable(),
+    labels: z.array(z.string()),
+    /** Labels whose parent label names a group (Harness, Runs on, Repository), with that group's name. */
+    labelGroups: z.array(labelGroupSchema).default([]),
+    /** The external ids of the comments the factory posted; Plane also marks them with external_source. */
+    factoryCommentIds: z.array(z.string()).default([]),
+  }),
+};
+
+const SHIPPED = { linear, plane } satisfies Record<string, SourceShape>;
 
 /** The sources the factory ships. Regressions register a fake one beside them (registerSource in ./index). */
 export type JobSource = keyof typeof SHIPPED;

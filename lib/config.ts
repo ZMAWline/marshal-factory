@@ -112,8 +112,23 @@ export const factorySchema = z
   .prefault({});
 export type FactoryLimits = z.infer<typeof factorySchema>;
 
+/** A self-hosted Plane project the factory takes work from (lib/sources/plane.ts). */
+export const planeSchema = z.object({
+  /** Where Plane answers, such as https://plane.example.com; the API is under /api/v1. */
+  baseUrl: z.url().transform((url) => url.replace(/\/+$/, "")),
+  /** A Plane personal access token, sent as X-API-Key. */
+  apiKey: z.string().min(1),
+  /** The workspace slug in Plane's URLs. */
+  workspace: z.string().min(1),
+  /** The project's id (a UUID); its identifier, such as FAC, prefixes the job keys. */
+  projectId: z.string().min(1),
+});
+export type PlaneConfig = z.infer<typeof planeSchema>;
+
 const configSchema = z.object({
-  linearApiKey: z.string().min(1),
+  /** Linear's personal API key; a factory that takes work only from Plane leaves it out. */
+  linearApiKey: z.string().min(1).optional(),
+  plane: planeSchema.optional(),
   ingestUrl: z.url(),
   secret: z.string().min(1),
   factory: factorySchema,

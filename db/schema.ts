@@ -286,6 +286,7 @@ export const intentKind = pgEnum("intent_kind", [
   "retry_stop",
   "retry_job",
   "slack_test",
+  "source_request",
 ]);
 
 /**
@@ -297,6 +298,8 @@ export const intentKind = pgEnum("intent_kind", [
  * The Repositories page records onboard_repo and rebuild_repo_image with the repo as detail; a push
  * to a default branch records repo_push with the repo and the changed files (lib/webhooks.ts).
  * Settings records slack_test with the owner as detail; a runner with a Slack token posts the test message.
+ * The panel records source_request for a source it cannot reach (lib/sources/relay.ts); the runner
+ * does the write and stores { value } or { error } in result, which the panel waits for.
  */
 export const intents = pgTable(
   "intents",

@@ -1,7 +1,7 @@
 import { endpointOf } from "./test-mode";
 
 /** Compute endpoints of the production branch, br-nameless-dawn-b9ku4ts5. Add any new one here. */
-export const PRODUCTION_ENDPOINTS = new Set(["ep-odd-field-b95xpf9v"]);
+export const PRODUCTION_ENDPOINTS = new Set(["ep-patient-cake-bb1ukrlt"]);
 
 const DB_VARS = ["DATABASE_URL", "DATABASE_URL_UNPOOLED"] as const;
 

@@ -57,7 +57,7 @@ const registry = await readRegistry(db);
 const target = registry.find((r) => r.repo === repo);
 if (!target?.enabled) await finish(false, `${repo} is not an enabled repository`);
 
-const filed = await linearFiler(config.linearApiKey, config.factory.teamKey, config.factory.label)({
+const filed = await linearFiler(config.linearApiKey ?? "", config.factory.teamKey, config.factory.label)({
   requestId: randomUUID(),
   title: `Canary ${new Date().toISOString().slice(0, 16).replace("T", " ")}: unit converter demo page`,
   description,

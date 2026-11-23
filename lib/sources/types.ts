@@ -53,6 +53,8 @@ export interface SourceWebhook {
 export interface SourceAdapter<S extends JobSource> {
   source: S;
   webhook?: SourceWebhook;
+  /** Whether this runner's config sets the source up; the runner's source loops skip one that isn't. Absent means always. */
+  configured?(): boolean;
   ready(): Promise<JobDraft<S>[]>;
   /** Tells the source the job's current attempt was picked up; does nothing once it has. */
   announceClaim(job: Job<S>): Promise<void>;

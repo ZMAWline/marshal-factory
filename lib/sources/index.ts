@@ -1,5 +1,7 @@
 import type { JobRow } from "../../db/schema";
 import { linear } from "./linear";
+import { handlePlaneRequest, plane } from "./plane";
+import type { SourceRequest } from "./relay";
 import { isRegisteredSource, jobId, SOURCE_SHAPES, type SourceShape } from "./shapes";
 import type { Job, JobSource, SourceAdapter } from "./types";
 
@@ -8,7 +10,7 @@ export { jobId } from "./shapes";
 // The runner, the panel and the ingest function reach a source only through its adapter, by the
 // job's `source`. Adding a source is an adapter and a shape here; nothing outside lib/sources changes.
 
-export const SOURCES: { [S in JobSource]: SourceAdapter<S> } = { linear };
+export const SOURCES: { [S in JobSource]: SourceAdapter<S> } = { linear, plane };
 
 export const sourceFor = <S extends JobSource>(source: S): SourceAdapter<S> => {
   const adapter = SOURCES[source];
@@ -19,11 +21,31 @@ export const sourceFor = <S extends JobSource>(source: S): SourceAdapter<S> => {
 export const isJobSource = (name: string): name is JobSource => Object.hasOwn(SOURCES, name);
 
 /** Every registered source, for the work a runner does across them: claiming, stop checks, label sync. */
-export const allSources = (): SourceAdapter<JobSource>[] => Object.values(SOURCES);
+export const allSources = (): SourceAdapter<JobSource>[] => Object.values(SOURCES).filter((s) => s.configured?.() ?? true);
 
-/** Where the panel files new jobs and uploads their images, and whose override labels it adds. */
-const PANEL_SOURCE: JobSource = "linear";
-export const panelSource = () => sourceFor(PANEL_SOURCE);
+/**
+ * Where the panel files new jobs and uploads their images, and whose override labels it adds:
+ * FACTORY_PANEL_SOURCE in the panel's env (plane or linear), Linear when unset.
+ */
+export const panelSource = () => {
+  const name = process.env.FACTORY_PANEL_SOURCE ?? "linear";
+  if (!isJobSource(name)) throw new Error(`FACTORY_PANEL_SOURCE names ${name}, which is not a source`);
+  return sourceFor(name);
+};
+
+/**
+ * Does a write the panel relayed (lib/sources/relay.ts) for a source it cannot reach. The runner
+ * calls it for a source_request intent; the answer goes back in the intent's result as { value }.
+ */
+export async function handleSourceRequest(detail: string | null) {
+  const { source, request } = JSON.parse(detail ?? "null") as SourceRequest;
+  switch (source) {
+    case "plane":
+      return { value: await handlePlaneRequest(request as Parameters<typeof handlePlaneRequest>[0]) };
+    default:
+      throw new Error(`no relayed writes for source ${source}`);
+  }
+}
 
 /**
  * Adds a source beside the shipped ones. Only regressions call it, with a fake source that proves

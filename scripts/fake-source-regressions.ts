@@ -67,7 +67,7 @@ registerSource(
 
 // Every Linear call but an empty ready list fails the script.
 const linearReached: string[] = [];
-SOURCES.linear = new Proxy({ source: "linear", ready: async () => [] } as unknown as typeof SOURCES.linear, {
+SOURCES.linear = new Proxy({ source: "linear", ready: async () => [], configured: () => true } as unknown as typeof SOURCES.linear, {
   get: (target, prop) =>
     prop in target
       ? Reflect.get(target, prop)

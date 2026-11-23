@@ -122,7 +122,7 @@ assert.equal(forwarded?.key, "review:77", "keyed by the review, not the delivery
 assert.deepEqual(feedbackDetailSchema.parse(JSON.parse(forwarded!.detail!)), { from: "github", id: "review:77", reviewId: 77, reviewer: "jan", state: "changes_requested", body: "Rename the helper." });
 assert.equal(githubIntent("pull_request_review", review({ state: "commented", body: null }))?.kind, "request_changes", "inline comments alone are forwarded");
 assert.equal(githubIntent("pull_request_review", review({}, { login: "cursor[bot]", type: "Bot" })), null, "Bugbot is not a reviewer");
-assert.equal(githubIntent("pull_request_review", review({}, { login: "marshal-factory-ski043[bot]", type: "Bot" })), null, "nor is the factory's App");
+assert.equal(githubIntent("pull_request_review", review({}, { login: "marshal-factory-zmawline[bot]", type: "Bot" })), null, "nor is the factory's App");
 assert.equal(githubIntent("pull_request_review", review({ state: "approved" })), null, "an approval asks for nothing");
 assert.equal(githubIntent("pull_request_review", { ...review(), action: "edited" }), null, "an edit is not a new review");
 const onBranch = githubIntent("pull_request_review", { ...review(), pull_request: { html_url: "https://github.com/o/r/pull/1", head: { ref: "factory/FAC-5" } } });

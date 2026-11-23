@@ -169,10 +169,24 @@ export type LinearDeps = {
   limits: FactoryLimits;
 };
 
+const requireLinearKey = (key: string | undefined) => {
+  if (!key) throw new Error("linearApiKey is not set in the factory config, so Linear is not configured");
+  return key;
+};
+
+/** Whether this runner's config names a Linear key; a Plane-only factory leaves Linear out of its source loops. */
+export function linearConfigured() {
+  try {
+    return Boolean(loadConfig().linearApiKey);
+  } catch {
+    return false;
+  }
+}
+
 async function runtimeDeps(): Promise<LinearDeps> {
   const config = loadConfig();
   const { db } = await import("../../db/client");
-  return { client: linearClient(config.linearApiKey), db, limits: config.factory };
+  return { client: linearClient(requireLinearKey(config.linearApiKey)), db, limits: config.factory };
 }
 
 type Team = Awaited<ReturnType<LinearClient["team"]>>;
@@ -587,7 +601,7 @@ const uploadFetch: typeof fetch = (input, init) => {
 };
 
 const localizeImages = (job: { key: string }, text: string) =>
-  localizeLinearImages(text, { apiKey: loadConfig().linearApiKey, dir: join(/* turbopackIgnore: true */ ATTACHMENTS_DIR, job.key), fetch: uploadFetch });
+  localizeLinearImages(text, { apiKey: requireLinearKey(loadConfig().linearApiKey), dir: join(/* turbopackIgnore: true */ ATTACHMENTS_DIR, job.key), fetch: uploadFetch });
 
 const uploadFromEnv = (image: ImageFile) => {
   const key = process.env.LINEAR_API_KEY;
@@ -597,6 +611,7 @@ const uploadFromEnv = (image: ImageFile) => {
 
 export const linear: SourceAdapter<"linear"> = {
   ...createLinearAdapter(runtimeDeps),
+  configured: linearConfigured,
   file: fileFromEnv,
   uploadImage: uploadFromEnv,
   reply: replyFromEnv,
