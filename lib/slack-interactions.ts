@@ -1,28 +1,16 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { intents, jobs, slackMessages, type IntentKind, type JobRow, type SlackMessageRow } from "@/db/schema";
+import { jobs, slackMessages, type JobRow, type SlackMessageRow } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/owner";
+import { chatRequestId, follow, nextRequestId, runAction } from "@/lib/chat-actions";
 import { attemptBranch } from "@/lib/factory";
 import { followUpHint, MAX_FEEDBACK_CHARS, MAX_FOLLOW_UP_CHARS, MAX_RETRY_NOTE_CHARS, type InboxAction } from "@/lib/inbox";
-import {
-  answerQuestion,
-  approveMerge,
-  closeJob,
-  describeOutcome,
-  dismissJob,
-  fileFollowUp,
-  intentOutcome,
-  requestChanges,
-  retryFailed,
-  retryStop,
-  type InboxDeps,
-  type InboxOutcome,
-} from "@/lib/inbox-actions";
+import type { InboxDeps, InboxOutcome } from "@/lib/inbox-actions";
 import { mergeDecisionSchema } from "@/lib/merge-decision";
 import { ITEM_BLOCK_PREFIX, notifyEvents, PENDING_LABELS, redact, renderMessage, slackAction, SLACK_ACTION_IDS, type MessageFacts, type NotifyEvent } from "@/lib/slack";
 import type { SlackClient } from "@/lib/slack-api";
 import { NEW_JOB_CALLBACK_ID, newJobSubmitted, sendToFactory, shortcutSchema } from "@/lib/slack-new-job";
-import { ephemeral, invalidSignature, NO_TOKEN, NOT_OWNER, parseJson, safeMessage, signedBody, uuidFrom } from "@/lib/slack-request";
+import { ephemeral, invalidSignature, NO_TOKEN, NOT_OWNER, parseJson, safeMessage, signedBody } from "@/lib/slack-request";
 import { branchCosts } from "@/lib/spend";
 
 // Acting from Slack: the interactivity route (app/api/slack/interactions) hands every request here.
@@ -42,38 +30,8 @@ export function ownerFromAllowlist(allowlist = process.env.FACTORY_OWNER_EMAILS)
   return email ? { email, emailVerified: true } : null;
 }
 
-/**
- * The request id of one attempt at one action on one event: a double click, a second modal or a
- * Slack retry gets the same one, so it records one intent, files one issue or posts one answer; a
- * UUID, as the inbox actions want. `after` is the request id of the attempt the runner refused.
- */
-export const slackRequestId = (eventId: string, action: InboxAction, after = "") => uuidFrom(`slack:${eventId}:${action}${after && `:${after}`}`);
-
-/** The intent each runner-handled action records, keyed panel:<kind>:<request id>. */
-const INTENT_KINDS = {
-  answer: "answer",
-  approve: "approve_merge",
-  request_changes: "request_changes",
-  close: "close_job",
-  retry_stop: "retry_stop",
-  retry: "retry_job",
-} as const satisfies Partial<Record<InboxAction, IntentKind>>;
-
-/**
- * The request id for this click: the first attempt's, or the one after the last attempt the runner
- * refused, so the action can be tried again however the message was rendered since. Clicks while
- * an attempt is pending or done get that attempt's id and record nothing new.
- */
-async function nextRequestId(deps: InteractionDeps, eventId: string, action: InboxAction) {
-  let id = slackRequestId(eventId, action);
-  if (!(action in INTENT_KINDS)) return id;
-  const kind = INTENT_KINDS[action as keyof typeof INTENT_KINDS];
-  for (;;) {
-    const [intent] = await deps.inbox.db.select().from(intents).where(eq(intents.id, `panel:${kind}:${id}`));
-    if (!intent?.handled_at || describeOutcome(kind, intent.result).status !== "failed") return id;
-    id = slackRequestId(eventId, action, id);
-  }
-}
+/** The request id of one attempt at one action on one event from Slack; see chatRequestId. */
+export const slackRequestId = (eventId: string, action: InboxAction, after = "") => chatRequestId("slack", eventId, action, after);
 
 const MODAL_ACTIONS = ["answer", "request_changes", "follow_up", "close", "retry"] as const satisfies readonly InboxAction[];
 type ModalAction = (typeof MODAL_ACTIONS)[number];
@@ -222,46 +180,6 @@ async function messageFacts(deps: InteractionDeps, job: JobRow): Promise<Message
   return { panelUrl: deps.panelUrl, spend: costs[branch] ?? null, secrets: deps.secrets };
 }
 
-function runAction(inbox: InboxDeps, action: InboxAction, job: JobRow, requestId: string, text: string): Promise<InboxOutcome> {
-  switch (action) {
-    case "answer":
-      return answerQuestion(inbox, job.id, requestId, text);
-    case "approve": {
-      const decision = mergeDecisionSchema.safeParse(job.merge_decision).data;
-      return approveMerge(inbox, job.id, requestId, decision?.review?.headSha ?? decision?.headSha ?? null);
-    }
-    case "request_changes":
-      return requestChanges(inbox, job.id, requestId, text);
-    case "follow_up":
-      return fileFollowUp(inbox, job.id, requestId, text);
-    case "close":
-      return closeJob(inbox, job.id, requestId, text);
-    case "dismiss":
-      return dismissJob(inbox, job.id);
-    case "retry_stop":
-      return retryStop(inbox, job.id, requestId);
-    case "retry":
-      return retryFailed(inbox, job.id, requestId, text);
-    default: {
-      const never: never = action;
-      throw new Error(`unknown inbox action ${String(never)}`);
-    }
-  }
-}
-
-/** Follows the intent until the runner handled it, as the panel's detail pane does. */
-async function follow(deps: InteractionDeps, intentId: string): Promise<InboxOutcome> {
-  const pollMs = deps.pollMs ?? 2_000;
-  const deadline = Date.now() + (deps.followMs ?? 50_000);
-  for (;;) {
-    const outcome = await intentOutcome(deps.inbox, intentId);
-    if (outcome.status === "failed") return { ok: false, message: outcome.message };
-    if (outcome.status === "done") return { ok: true, intentId };
-    if (Date.now() + pollMs > deadline) return { ok: true, intentId };
-    await new Promise((resolve) => setTimeout(resolve, pollMs));
-  }
-}
-
 /**
  * Shows the pending state, runs the action and follows its intent. A refusal puts the buttons back
  * and says why; otherwise the notifier edits the message to its resolution.
@@ -278,8 +196,8 @@ async function act(deps: InteractionDeps, item: Item, action: InboxAction, text:
   await show(PENDING_LABELS[action]);
   let outcome: InboxOutcome;
   try {
-    outcome = await runAction(deps.inbox, action, item.job, await nextRequestId(deps, item.event.id, action), text);
-    if (outcome.ok && outcome.intentId) outcome = await follow(deps, outcome.intentId);
+    outcome = await runAction(deps.inbox, action, item.job, await nextRequestId(deps.inbox, "slack", item.event.id, action), text);
+    if (outcome.ok && outcome.intentId) outcome = await follow(deps.inbox, outcome.intentId, deps);
   } catch (error) {
     outcome = { ok: false, message: safeMessage(deps.secrets, error) };
   }
