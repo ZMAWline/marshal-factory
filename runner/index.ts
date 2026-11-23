@@ -35,6 +35,7 @@ const { baseImageIdle, rebuildBaseImage, stopBaseImage } = await import("./base-
 const { advanceOnboarding, onboardRepo, repoPushed, requestRebuild } = await import("./onboarding");
 const { repoPushDetailSchema } = await import("../lib/webhooks");
 const { notifySlack, sendSlackTest, slackFromEnv } = await import("./slack");
+const { notifyTelegram, telegramFromEnv } = await import("./telegram");
 const { keepSubscribed } = await import("./realtime");
 const { handleSourceRequest } = await import("../lib/sources");
 type IntentRow = typeof intents.$inferSelect;
@@ -256,6 +257,7 @@ if (process.argv.includes("--once")) {
   await serial("registry", ops.registerCheckouts);
   await serial("reconcile", startupReconcile);
   if (slackFromEnv()) await serial("slack", () => notifySlack());
+  if (telegramFromEnv()) await serial("telegram", () => notifyTelegram());
   takeIntents(await openIntents());
   await queue.idle();
   // A rebuild the reconcile started is this run's to finish, with the launch it queues when it lands.
@@ -332,6 +334,7 @@ setInterval(() => {
   void serial("onboarding", () => advanceOnboarding());
   // After the tick's merge decisions and stop checks, so the inbox it reads is this tick's; its own step, so a slow Slack delays nothing.
   if (slackFromEnv()) void serial("slack", () => notifySlack());
+  if (telegramFromEnv()) void serial("telegram", () => notifyTelegram());
   // Intents the subscription may not have delivered.
   void openIntents().then(takeIntents);
 }, ops.config.factory.tickSeconds * 1000);
