@@ -36,6 +36,7 @@ const { advanceOnboarding, onboardRepo, repoPushed, requestRebuild } = await imp
 const { repoPushDetailSchema } = await import("../lib/webhooks");
 const { notifySlack, sendSlackTest, slackFromEnv } = await import("./slack");
 const { keepSubscribed } = await import("./realtime");
+const { handleSourceRequest } = await import("../lib/sources");
 type IntentRow = typeof intents.$inferSelect;
 
 const machine = await thisMachine();
@@ -114,6 +115,8 @@ async function handle(intent: IntentRow) {
     }
     case "slack_test":
       return sendSlackTest(JSON.parse(intent.detail ?? "null"));
+    case "source_request":
+      return handleSourceRequest(intent.detail);
     default: {
       const unhandled: never = intent.kind;
       throw new Error(`no handler for intent ${String(unhandled)}`);

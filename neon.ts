@@ -11,7 +11,12 @@ export default defineConfig({
       source: "functions/ingest/index.ts",
       env: {
         FACTORY_INGEST_SECRET: process.env.FACTORY_INGEST_SECRET!,
-        LINEAR_WEBHOOK_SECRET: process.env.LINEAR_WEBHOOK_SECRET!,
+        // A Plane-only factory has no Linear webhook; the route then refuses every delivery.
+        LINEAR_WEBHOOK_SECRET: process.env.LINEAR_WEBHOOK_SECRET ?? "",
+        // Plane shows the webhook's secret when it is created (scripts/install-webhooks.ts); the
+        // project id keeps deliveries from other projects in the workspace out.
+        PLANE_WEBHOOK_SECRET: process.env.PLANE_WEBHOOK_SECRET ?? "",
+        PLANE_PROJECT_ID: process.env.PLANE_PROJECT_ID ?? "",
         GITHUB_APP_WEBHOOK_SECRET: process.env.GITHUB_APP_WEBHOOK_SECRET || readAppFile().webhook_secret,
         // Match factory.teamKey and factory.label in the config when they differ from these.
         FACTORY_TEAM_KEY: process.env.FACTORY_TEAM_KEY ?? "FAC",

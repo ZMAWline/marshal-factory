@@ -99,7 +99,7 @@ const path = process.env.PATH;
 process.env.PATH = "/nonexistent";
 try {
   assert.deepEqual(
-    await identify(),
+    await identify(undefined, { platform: "darwin" }),
     { id: `hostname:${hostname()}`, name: hostname(), idFrom: "hostname" },
     "without ioreg the runner falls back to the host name instead of crashing",
   );

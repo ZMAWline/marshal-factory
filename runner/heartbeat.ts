@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { cpus, hostname, loadavg, totalmem } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -18,17 +19,42 @@ const RUNNER_DIR = join(import.meta.dirname, "..");
 const text = async (cmd: string, args: string[], cwd?: string) =>
   (await run(cmd, args, { cwd, timeout: 5_000, maxBuffer: 1024 * 1024 })).stdout;
 
-export type Machine = { id: string; name: string; idFrom: "config" | "ioreg" | "hostname" };
+export type Machine = { id: string; name: string; idFrom: "config" | "ioreg" | "machine-id" | "hostname" };
 
-/** Falls back to the host name when ioreg fails, so the runner starts instead of crash-looping under launchd. */
-export async function identify(override?: string): Promise<Machine> {
-  const name = (await text("scutil", ["--get", "ComputerName"]).then((out) => out.trim(), () => "")) || hostname();
+/** A systemd machine id: 32 lowercase hex digits, set at install and stable across reboots. */
+export function parseMachineId(content: string) {
+  const id = content.trim();
+  return /^[0-9a-f]{32}$/.test(id) && !/^0+$/.test(id) ? id : undefined;
+}
+
+export type IdentifyDeps = {
+  platform?: NodeJS.Platform;
+  read?: (path: string) => Promise<string>;
+  exec?: (cmd: string, args: string[]) => Promise<string>;
+  host?: () => string;
+};
+
+/**
+ * The machine's stable id: the Mac's IOPlatformUUID, or on Linux /etc/machine-id (then the D-Bus
+ * copy). Falls back to the host name when neither can be read, so the runner starts instead of
+ * crash-looping under its service manager.
+ */
+export async function identify(override?: string, { platform = process.platform, read = (path) => readFile(path, "utf8"), exec = text, host = hostname }: IdentifyDeps = {}): Promise<Machine> {
+  const name = (platform === "darwin" ? await exec("scutil", ["--get", "ComputerName"]).then((out) => out.trim(), () => "") : "") || host();
   if (override) return { id: override, name, idFrom: "config" };
-  const uuid = await text("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"]).then(
-    (out) => /"IOPlatformUUID" = "([^"]+)"/.exec(out)?.[1],
-    () => undefined,
-  );
-  return uuid ? { id: uuid, name, idFrom: "ioreg" } : { id: `hostname:${hostname()}`, name, idFrom: "hostname" };
+  if (platform === "linux") {
+    for (const path of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
+      const id = await read(path).then(parseMachineId, () => undefined);
+      if (id) return { id: `machine-id:${id}`, name, idFrom: "machine-id" };
+    }
+  } else {
+    const uuid = await exec("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"]).then(
+      (out) => /"IOPlatformUUID" = "([^"]+)"/.exec(out)?.[1],
+      () => undefined,
+    );
+    if (uuid) return { id: uuid, name, idFrom: "ioreg" };
+  }
+  return { id: `hostname:${host()}`, name, idFrom: "hostname" };
 }
 
 let machine: Promise<Machine> | undefined;
@@ -49,6 +75,17 @@ export function parseVmStat(output: string, totalBytes: number) {
   return { usedBytes, totalBytes };
 }
 
+/** Linux counts the page cache the kernel can drop at once in MemAvailable, so in use is the rest. */
+export function parseMeminfo(output: string) {
+  const kb = (name: string) => {
+    const match = new RegExp(`^${name}:\\s+(\\d+) kB$`, "m").exec(output);
+    if (!match) throw new Error(`/proc/meminfo has no ${name} line`);
+    return Number(match[1]) * 1024;
+  };
+  const totalBytes = kb("MemTotal");
+  return { usedBytes: totalBytes - kb("MemAvailable"), totalBytes };
+}
+
 export function parseDf(output: string) {
   const [header, row] = output.trim().split("\n");
   if (!header?.startsWith("Filesystem") || !header.includes("1024-blocks") || !row) throw new Error("df output has no 1024-blocks table");
@@ -67,8 +104,8 @@ const settle = <T>(collect: () => Promise<T>) => collect().catch((): typeof UNKN
 export function systemCollectors(capacity: () => Promise<Heartbeat["capacity"]>): HeartbeatCollectors {
   return {
     cpu: async () => ({ load1: loadavg()[0]!, cores: cpus().length }),
-    memory: async () => parseVmStat(await text("vm_stat", []), totalmem()),
-    disk: async () => parseDf(await text("df", ["-k", "/System/Volumes/Data"])),
+    memory: async () => (process.platform === "linux" ? parseMeminfo(await readFile("/proc/meminfo", "utf8")) : parseVmStat(await text("vm_stat", []), totalmem())),
+    disk: async () => parseDf(await text("df", process.platform === "linux" ? ["-Pk", "/"] : ["-k", "/System/Volumes/Data"])),
     capacity,
   };
 }

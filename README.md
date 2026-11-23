@@ -314,6 +314,10 @@ Work in a separate clone or worktree, never in the live checkout. Run `bun dev` 
 
 `bun run test:regressions` runs every `scripts/*-regressions.ts` against a throwaway Neon branch made from production. It deletes the branch when the run ends. Pass a prefix to run a subset, for example `bun run test:regressions ingest`. During a test run, the real Linear client, the GitHub App and `t3` commands refuse to run, so a test can't touch real work.
 
+## Plane instead of Linear, and Linux instead of macOS
+
+The factory also takes work from a self-hosted [Plane](https://plane.so) project, and the runner also runs on Linux as a systemd user service. [docs/operations.md](docs/operations.md#plane) has the setup: the `plane` config, the webhook, the `FACTORY_PANEL_SOURCE=plane` relay for a Plane on a private network, and the Linux service.
+
 ## Further reading
 
 - [docs/operations.md](docs/operations.md): how each part behaves, including the runner, write-back, retries, spend, cleanup, the watchdog, sign-in and deploys.
