@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   customType,
@@ -22,6 +23,7 @@ import type { Autonomy, MergeDecision } from "../lib/merge-decision";
 import type { NotificationConfig } from "../lib/notifications";
 import type { ScreenshotType } from "../lib/screenshots";
 import { ONBOARDING_STATES, type OnboardingDetail } from "../lib/onboarding";
+import type { InboxAction } from "../lib/inbox";
 import type { NotifyKind, SlackMessageState } from "../lib/slack";
 import type { JobId, JobSource } from "../lib/sources/shapes";
 import type { StopRecord } from "../lib/stop";
@@ -407,6 +409,8 @@ export const telegramMessages = pgTable(
     state: text("state").$type<SlackMessageState>().notNull(),
     chat_id: text("chat_id"),
     message_id: integer("message_id"),
+    /** The short id the message's buttons carry in callback_data, which holds 64 bytes; telegramToken(id). */
+    token: text("token"),
     /** A hash of the message last sent, so an unchanged event is not edited again. */
     fingerprint: text("fingerprint"),
     /** What the resolved message says happened; null while open. */
@@ -418,8 +422,33 @@ export const telegramMessages = pgTable(
   (t) => [
     index("telegram_messages_state_idx").on(t.state),
     index("telegram_messages_job_idx").on(t.job_id),
+    uniqueIndex("telegram_messages_token_idx").on(t.token),
+    index("telegram_messages_message_idx").on(t.chat_id, t.message_id),
     check("telegram_messages_state_check", sql`${t.state} in ('posting', 'open', 'resolved')`),
   ],
+);
+
+/** Each update the Telegram webhook took, so a redelivery does nothing; see lib/telegram-webhook.ts. */
+export const telegramUpdates = pgTable("telegram_updates", {
+  update_id: bigint("update_id", { mode: "number" }).primaryKey(),
+  received_at: ts("received_at").notNull(),
+});
+
+/**
+ * A force_reply prompt the webhook sent for a button that needs text (Answer, Request changes,
+ * Retry with note, File a follow-up): the owner's reply to the prompt is that text.
+ */
+export const telegramPrompts = pgTable(
+  "telegram_prompts",
+  {
+    chat_id: text("chat_id").notNull(),
+    message_id: integer("message_id").notNull(),
+    /** The telegram_messages row, which is the notification event's id. */
+    event_id: text("event_id").notNull(),
+    action: text("action").$type<InboxAction>().notNull(),
+    created_at: ts("created_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.chat_id, t.message_id] })],
 );
 
 export const onboardingState = pgEnum("onboarding_state", ONBOARDING_STATES);
@@ -504,3 +533,4 @@ export type JobEvidenceRow = typeof jobEvidence.$inferSelect;
 export type NotificationSettingsRow = typeof notificationSettings.$inferSelect;
 export type SlackMessageRow = typeof slackMessages.$inferSelect;
 export type TelegramMessageRow = typeof telegramMessages.$inferSelect;
+export type TelegramPromptRow = typeof telegramPrompts.$inferSelect;

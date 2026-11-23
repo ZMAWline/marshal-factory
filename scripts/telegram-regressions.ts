@@ -13,7 +13,7 @@ const { jobs, notificationSettings, telegramMessages } = await import("../db/sch
 const { linearJob } = await import("./fixtures");
 const { notificationConfigSchema, NOTIFICATIONS_ID } = await import("../lib/notifications");
 const { notifyEvents, redact } = await import("../lib/slack");
-const { escapeHtml, renderTelegram, telegramClient, TelegramRateLimited } = await import("../lib/telegram");
+const { escapeHtml, renderTelegram, telegramClient, telegramToken, TelegramRateLimited } = await import("../lib/telegram");
 const { notifyTelegram, POSTING_STALE_MS, telegramFromEnv } = await import("../runner/telegram");
 const { serve } = await import("./serve");
 
@@ -134,6 +134,8 @@ try {
   assert.equal(row!.state, "open");
   assert.equal(row!.chat_id, CHAT);
   assert.equal(typeof row!.message_id, "number");
+  assert.equal(row!.token, telegramToken(row!.id), "the row keeps the token its buttons carry");
+  assert.deepEqual(sends[0]!.params.reply_markup, { inline_keyboard: [[{ text: "Answer", callback_data: `an:${row!.token}` }]] }, "an open question has its Answer button");
   assert.ok(result.posted >= 1);
 
   // --- a replay sends nothing: a re-tick and a restart
@@ -158,6 +160,7 @@ try {
   assert.equal(edits[0]!.params.message_id, row!.message_id, "the question's own message");
   assert.equal(edits[0]!.params.chat_id, CHAT);
   assert.match(textOf(edits[0]!), /<b>✅ Answered<\/b> · Question/);
+  assert.equal(edits[0]!.params.reply_markup, undefined, "a resolved message loses its buttons");
   assert.equal(since(mark, "sendMessage").length, 0, "no new message for the answer");
   [row] = await rowsFor(a);
   assert.equal(row!.state, "resolved");

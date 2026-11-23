@@ -6,7 +6,7 @@ import { loadConfig } from "../lib/config";
 import { attemptBranch } from "../lib/factory";
 import { inQuietHours, parseNotificationConfig, readNotifications } from "../lib/notifications";
 import { NOTIFY_WINDOW_MS, notifyEvents, panelUrl, redact, resolution, secretValues, TOGGLE_OF, URGENT, type MessageFacts } from "../lib/slack";
-import { renderTelegram, TelegramApiError, telegramClient, TelegramRateLimited, type TelegramClient, type TelegramMessage } from "../lib/telegram";
+import { renderTelegram, TelegramApiError, telegramClient, telegramToken, TelegramRateLimited, type TelegramClient, type TelegramMessage } from "../lib/telegram";
 import { branchCosts } from "../lib/spend";
 
 // The Telegram notifier, the twin of runner/slack.ts: each pass diffs the notification events
@@ -14,7 +14,8 @@ import { branchCosts } from "../lib/spend";
 // edits the ones whose event changed and sends the new ones to TELEGRAM_CHAT_ID. Every step is keyed
 // by the event id, so a re-tick, a restart or a second runner never sends an event twice. The
 // notification settings' events and quiet hours apply as they do to Slack; its Slack target does
-// not. A runner without TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID does nothing.
+// not. An open message carries its inbox actions' buttons, which the panel's webhook
+// (lib/telegram-webhook.ts) answers. A runner without TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID does nothing.
 
 /** Most Telegram calls one pass makes; the rest wait for the next tick. */
 export const MAX_CALLS_PER_PASS = 20;
@@ -38,7 +39,12 @@ export function telegramFromEnv(env: Record<string, string | undefined> = proces
   return { client: cached.client, chatId, secrets: [token, ...secretValues(env)] };
 }
 
-const fingerprint = (message: TelegramMessage) => createHash("sha256").update(message.text).digest("hex").slice(0, 32);
+/** Over the text and the buttons, so a message sent before it had buttons gets them on the next pass. */
+const fingerprint = (message: TelegramMessage) =>
+  createHash("sha256")
+    .update(message.keyboard ? `${message.text}\n${JSON.stringify(message.keyboard)}` : message.text)
+    .digest("hex")
+    .slice(0, 32);
 const errorText = (error: unknown, secrets: readonly string[]) => redact(error instanceof Error ? error.message : String(error), secrets);
 
 export type NotifyResult =
@@ -130,7 +136,7 @@ export async function notifyTelegram(telegram: TelegramSetup | null = telegramFr
       if (!budget()) break;
       const [claimed] = await db
         .insert(telegramMessages)
-        .values({ id: event.id, job_id: event.job.id, kind: event.kind, state: "posting", created_at: now, updated_at: now })
+        .values({ id: event.id, job_id: event.job.id, kind: event.kind, state: "posting", token: telegramToken(event.id), created_at: now, updated_at: now })
         .onConflictDoNothing()
         .returning({ id: telegramMessages.id });
       if (!claimed) continue;
